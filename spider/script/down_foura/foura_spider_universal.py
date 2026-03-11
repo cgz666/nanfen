@@ -1,5 +1,6 @@
 import os
 import pickle
+import schedule
 import time
 import requests
 import pandas as pd
@@ -487,12 +488,24 @@ class ExcelProcess():
             pythoncom.CoUninitialize()
 
 
+# 替换原有main函数
+def full_task():
+    try:
+        # 执行所有下载+Excel处理
+        Station().main()
+        FsuJianKong().main()
+        AlarmHistoryHbase().main()
+        BlackoutAlert().main()
+        LowVoltageAlarm().main()
+        FaultMonitoring().main()
+        PowerWorkOrder().main()
+        ExcelProcess().excel_process()
+    except Exception as e:
+        print(f"任务失败: {e}")
+
 if __name__ == '__main__':
-    # FaultMonitoring().main()
-    # Station().main()
-    # AlarmHistoryHbase().main()
-    # BlackoutAlert().main()
-    # LowVoltageAlarm().main()
-    # FsuJianKong().main()
-    # PowerWorkOrder().main()
-    ExcelProcess().excel_process()
+    full_task()
+    schedule.every(1).hours.do(full_task)
+    while True:
+        schedule.run_pending()
+        time.sleep(60)

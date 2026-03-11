@@ -252,7 +252,7 @@ class PowerWorkOrder():
 
     def update_session(self):
         """更新 pickle 文件（获取最新 session）"""
-        res = requests.get('http://clound.gxtower.cn:3980/tt/get_session_quxin ')
+        res = requests.get('http://clound.gxtower.cn:3980/tt/get_session_quxin')
         with open(self.pickle_path, "wb") as file:
             file.write(res.content)
 

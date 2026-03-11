@@ -9,7 +9,7 @@ from functools import wraps
 from bs4 import BeautifulSoup
 import pythoncom
 import win32com.client as win32
-from spider.script.down_foura import foura_data
+import foura_data
 from core.config import settings
 
 

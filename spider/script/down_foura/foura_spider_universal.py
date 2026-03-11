@@ -264,19 +264,8 @@ class PowerWorkOrder():
         return begin.strftime('%Y-%m-%d %H:%M:%S'), end.strftime('%Y-%m-%d %H:%M:%S')
 
     def down_core(self, begin, end, session):
-        url = 'http://guangxi.towercom.vip:11080/gapi/tower_manage_bms/a/tower/oil/report/exportDeviReportNew'
-        headers = {
-            "Accept": "application/json, text/plain, */*",
-            "Accept-Encoding": "gzip, deflate",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6",
-            "Authorization": "Bearer ecadd818-956a-48d2-9b49-ba6d6699cbcd",
-            "Connection": "keep-alive",
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Host": "guangxi.towercom.vip:11080",
-            "Origin": "http://guangxi.towercom.vip:11080",
-            "Referer": "http://guangxi.towercom.vip:11080/tower_old_bms_vue/",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Edg/136.0.0.0"
-        }
+        url = 'http://clound.gxtower.cn:11080/tower_manage_bms/a/tower/oil/report/exportDeviReportNew'
+
         data = {
             "pageNo": "1",
             "pageSize": "25",
@@ -310,7 +299,7 @@ class PowerWorkOrder():
             "endGenerateDate": end
         }
 
-        res = session.post(url=url,headers=headers,data=data)
+        res = session.post(url=url,data=data)
         with open(self.output_path, "wb") as file:
             file.write(res.content)
 

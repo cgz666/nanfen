@@ -310,7 +310,7 @@ class PowerWorkOrder():
         data = {
             "pageNo": "1",
             "pageSize": "25",
-            "city.id": "",
+            "city.id": "1115",
             "area.id": "",
             "stationName": "",
             "stationCode": "",
@@ -724,11 +724,12 @@ def full_task():
         print(f"任务失败: {e}")
 
 if __name__ == '__main__':
-    full_task()
-    schedule.every(1).hours.do(full_task)
-    while True:
-        schedule.run_pending()
-        time.sleep(60)
+    # full_task()
+    # schedule.every(1).hours.do(full_task)
+    # while True:
+    #     schedule.run_pending()
+    #     time.sleep(60)
+    PowerWorkOrder().main()
 
 
 

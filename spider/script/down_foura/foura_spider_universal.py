@@ -7,6 +7,7 @@ import schedule
 import time
 import requests
 import pandas as pd
+import shutil
 from datetime import datetime
 from functools import wraps
 from bs4 import BeautifulSoup
@@ -101,9 +102,16 @@ def down_file_single(url, data, path, conten_len_error=1000):
         return
     except Exception:
         raise
+def clean_down_dir():
+    """清理spider/down目录下所有文件，保留子目录结构"""
+    down_dir = settings.resolve_path("spider/down")
+    if os.path.exists(down_dir):
+        for root, _, files in os.walk(down_dir):
+            for file in files:
+                os.remove(os.path.join(root, file))
 
 """
-1. 爬取站址信息 (单地市)
+1. 爬取站址信息
 """
 class Station():
     def __init__(self):
@@ -123,7 +131,7 @@ class Station():
         print(f"下载完成: {self.output_path}")
 
 """
-4. 爬取FSU监控 (离线)
+2. 爬取FSU监控 (离线)
 """
 class FsuJianKong():
     def __init__(self):
@@ -139,7 +147,7 @@ class FsuJianKong():
         print("FSU监控下载完成")
 
 """
-5. 爬取历史告警Hbase (单地市)
+3. 爬取历史告警Hbase
 """
 class AlarmHistoryHbase():
     def __init__(self):
@@ -176,7 +184,6 @@ class AlarmHistoryHbase():
         second_alarm = alarm_names[1]
         for key in ['1']:
             self.data[key]['queryForm:queryalarmName'] = second_alarm
-
         try:
             down_file_single(self.URL, self.data, path, append=True)  # 假设支持 append 参数
             print(f"下载成功: {second_alarm}")
@@ -187,47 +194,79 @@ class AlarmHistoryHbase():
         self.down()
 
 """
-7. 爬取交流输入停电告警
+4-5. 爬取告警数据
 """
-class BlackoutAlert():
+class AlarmDownloader():
     def __init__(self):
         self.data = foura_data.alarm_now
         self.URL = 'http://omms.chinatowercom.cn:9000/business/resMge/alarmMge/listAlarm.xhtml'
-        self.down_name = '交流输入停电告警'
-        self.output_path = settings.resolve_path(f"spider/down/alarm_now/{self.down_name}.xls")
+        # 告警名称列表
+        self.alarm_names = [
+            '交流输入停电告警',
+            '一级低压脱离告警',
+            '温度过高',
+            '温度超高',  # 这个会追加到温度过高文件
+            '电池供电告警',
+            '交流输入缺相告警',
+            '总电压过低告警',
+            '整流模块故障告警',
+            '直流输出电压过低告警'
+        ]
 
     def down(self):
-        for key in ['1', '2']:
-            if key in self.data:
-                self.data[key]['queryForm:fscidText'] = self.down_name
-        down_file_single(self.URL, self.data, self.output_path)
+        for alarm_name in self.alarm_names:
+            for key in ['1', '2']:
+                if key in self.data:
+                    self.data[key]['queryForm:fscidText'] = alarm_name
+
+            # 温度超高追加到温度过高文件
+            if alarm_name == '温度超高':
+                target_path = settings.resolve_path("spider/down/alarm_now/温度过高.xls")
+                temp_path = settings.resolve_path("spider/down/alarm_now/temp_温度超高.xls")
+                down_file_single(self.URL, self.data, temp_path)
+                self._merge_excel(target_path, temp_path)
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            else:
+                output_path = settings.resolve_path(f"spider/down/alarm_now/{alarm_name}.xls")
+                down_file_single(self.URL, self.data, output_path)
+                print(f"下载完成: {alarm_name} -> {output_path}")
+
+    def _merge_excel(self, target_path, source_path):
+        """将source_path的数据追加到target_path，保持长数字串为文本格式"""
+        try:
+            # 读取源文件（温度超高），所有列都作为字符串读取，防止科学计数法
+            df_source = pd.read_excel(source_path, dtype=str)
+
+            if os.path.exists(target_path):
+                # 目标文件存在，读取后追加（同样作为字符串）
+                df_target = pd.read_excel(target_path, dtype=str)
+                df_merged = pd.concat([df_target, df_source], ignore_index=True)
+            else:
+                # 目标文件不存在，直接用源数据
+                df_merged = df_source
+
+            # 保存合并后的结果，使用openpyxl引擎，保持文本格式
+            with pd.ExcelWriter(target_path, engine='openpyxl') as writer:
+                df_merged.to_excel(writer, index=False)
+
+                # 获取工作表，将所有列设置为文本格式
+                worksheet = writer.sheets['Sheet1']
+                for column in worksheet.columns:
+                    for cell in column:
+                        # 如果单元格值是数字字符串，确保它保持为字符串
+                        if isinstance(cell.value, str) and cell.value.isdigit():
+                            cell.number_format = '@'  # 文本格式
+
+        except Exception as e:
+            print(f"合并文件失败: {e}")
+            raise
 
     def main(self):
         self.down()
-        print(f"下载完成: {self.output_path}")
 
 """
-7. 爬取一级低压脱离告警
-"""
-class LowVoltageAlarm():
-    def __init__(self):
-        self.data = foura_data.alarm_now.copy()
-        self.URL = 'http://omms.chinatowercom.cn:9000/business/resMge/alarmMge/listAlarm.xhtml'
-        self.down_name = '一级低压脱离告警'
-        self.output_path = settings.resolve_path(f"spider/down/alarm_now/{self.down_name}.xls")
-
-    def down(self):
-        for key in ['1', '2']:
-            if key in self.data:
-                self.data[key]['queryForm:fscidText'] = '一级低压脱离告警'
-        down_file_single(self.URL, self.data, self.output_path)
-
-    def main(self):
-        self.down()
-        print(f"下载完成: {self.output_path}")
-
-"""
-8. 爬取故障监控 (单地市)
+6. 爬取故障监控 
 """
 class FaultMonitoring():
     def __init__(self):
@@ -243,7 +282,9 @@ class FaultMonitoring():
         self.down()
         print(f"下载完成: {self.output_path}")
 
-
+"""
+7. 爬取发电工单
+"""
 class PowerWorkOrder():
     def __init__(self):
         self.down_name = '发电工单'
@@ -310,12 +351,17 @@ class PowerWorkOrder():
             session = pickle.load(f)
         self.down_core(begin_generate_date, end_generate_date, session)
 
+"""
+8. 处理Excel
+"""
 class ExcelProcess():
     def __init__(self):
         self.save_path = settings.resolve_path( "spider/down")
         self.output_path = settings.resolve_path( "spider/output")
-        self.output_name = os.path.join(self.output_path, "应急保障信息通报.xlsx")
-        self.model_path = os.path.join(self.output_path, "模板.xlsx")
+        self.output_name1 = os.path.join(self.output_path, "应急保障信息通报.xlsx")
+        self.output_name2 = os.path.join(self.output_path, "运营商高等级站点告警通报.xlsx")
+        self.model_path1 = os.path.join(self.output_path, "模板1.xlsx")
+        self.model_path2 = os.path.join(self.output_path, "模板2.xlsx")
         self.down_name1 = 'station'
         self.down_name2 = 'fsu_lixian'
         self.down_name3 = 'hbase'
@@ -329,8 +375,14 @@ class ExcelProcess():
         self.file_name5 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/一级低压脱离告警.xls")
         self.file_name6 = settings.resolve_path(f"{self.save_path}/{self.down_name5}/故障监控.xls")
         self.file_name7 = settings.resolve_path(f"{self.save_path}/{self.down_name6}/发电工单.xls")
+        self.file_name8 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/温度过高.xls")
+        self.file_name9 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/电池供电告警.xls")
+        self.file_name10 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/交流输入缺相告警.xls")
+        self.file_name11 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/总电压过低告警.xls")
+        self.file_name12 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/整流模块故障告警.xls")
+        self.file_name13 = settings.resolve_path(f"{self.save_path}/{self.down_name4}/直流输出电压过低告警.xls")
 
-    def excel_process(self):
+    def excel_process1(self):
         """处理Excel文件，将数据文件内容复制到主表文件中"""
         print('开始处理Excel文件...')
         pythoncom.CoInitialize()
@@ -338,7 +390,7 @@ class ExcelProcess():
             xl = win32.gencache.EnsureDispatch('Excel.Application')
             xl.Visible = False
             xl.DisplayAlerts = False
-            workbook_main = xl.Workbooks.Open(self.model_path)
+            workbook_main = xl.Workbooks.Open(self.model_path1)
 
             # 1. 站址信息
             workbook_data = xl.Workbooks.Open(self.file_name1)
@@ -469,7 +521,183 @@ class ExcelProcess():
             xl.CutCopyMode = False
             workbook_data.Close(SaveChanges=False)
 
-            workbook_main.SaveAs(self.output_name)
+            workbook_main.SaveAs(self.output_name1)
+            workbook_main.Close()
+            xl.Quit()
+            print('已全部完成')
+        except Exception as e:
+            print(f"处理Excel时出错: {e}")
+            raise
+        finally:
+            pythoncom.CoUninitialize()
+
+    def excel_process2(self):
+        """处理Excel文件，将数据文件内容复制到主表文件中"""
+        print('开始处理Excel文件...')
+        pythoncom.CoInitialize()
+        try:
+            xl = win32.gencache.EnsureDispatch('Excel.Application')
+            xl.Visible = False
+            xl.DisplayAlerts = False
+            workbook_main = xl.Workbooks.Open(self.model_path2)
+
+            # 1. 一级低压脱离
+            workbook_data = xl.Workbooks.Open(self.file_name5)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('一级低压脱离')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 2. 交流输入停电
+            workbook_data = xl.Workbooks.Open(self.file_name4)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('交流输入停电')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 3. FSU离线
+            workbook_data = xl.Workbooks.Open(self.file_name2)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('FSU离线')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:CI{last_row}')
+
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:CI{last_clear_row}").ClearContents()
+
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 4. 交流输入缺相告警
+            workbook_data = xl.Workbooks.Open(self.file_name10)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('交流输入缺相告警')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 5. 总电压过低
+            workbook_data = xl.Workbooks.Open(self.file_name5)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('总电压过低')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 6. 温度过高
+            workbook_data = xl.Workbooks.Open(self.file_name8)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('温度过高告警')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 7.发电工单
+            workbook_data = xl.Workbooks.Open(self.file_name7)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('取信系统_发电数')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A3:BH{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A3:BH{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A3')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 8.整流模块故障告警
+            workbook_data = xl.Workbooks.Open(self.file_name12)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('整流模块故障告警')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 9.电池供电告警
+            workbook_data = xl.Workbooks.Open(self.file_name9)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('电池供电告警')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            # 10.直流输出电压过低告警
+            workbook_data = xl.Workbooks.Open(self.file_name13)
+            sheet_data = workbook_data.Sheets(1)
+            sheet_main = workbook_main.Sheets('直流输出电压过低告警')
+            last_row = sheet_data.Cells(sheet_data.Rows.Count, 1).End(win32.constants.xlUp).Row
+            source_range = sheet_data.Range(f'A1:BJ{last_row}')
+            last_clear_row = sheet_main.UsedRange.Rows.Count
+            if last_clear_row > 1:
+                sheet_main.Range(f"A1:BJ{last_clear_row}").ClearContents()
+            source_range.Copy()
+            target_range = sheet_main.Range('A1')
+            target_range.PasteSpecial(Paste=win32.constants.xlPasteValues)
+            xl.CutCopyMode = False
+            workbook_data.Close(SaveChanges=False)
+
+            workbook_main.SaveAs(self.output_name2)
             workbook_main.Close()
             xl.Quit()
             print('已全部完成')
@@ -483,15 +711,15 @@ class ExcelProcess():
 # 替换原有main函数
 def full_task():
     try:
-        # 执行所有下载+Excel处理
+        clean_down_dir()
         Station().main()
         FsuJianKong().main()
         AlarmHistoryHbase().main()
-        BlackoutAlert().main()
-        LowVoltageAlarm().main()
+        AlarmDownloader().main()
         FaultMonitoring().main()
         PowerWorkOrder().main()
-        ExcelProcess().excel_process()
+        ExcelProcess().excel_process1()
+        ExcelProcess().excel_process2()
     except Exception as e:
         print(f"任务失败: {e}")
 
@@ -501,3 +729,6 @@ if __name__ == '__main__':
     while True:
         schedule.run_pending()
         time.sleep(60)
+
+
+

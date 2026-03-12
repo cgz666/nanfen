@@ -697,6 +697,21 @@ class ExcelProcess():
             xl.CutCopyMode = False
             workbook_data.Close(SaveChanges=False)
 
+            # 筛选联通高等级站址_匹配告警：F-N列有有效数据的行（排除#N/A）
+            sheet_filter = workbook_main.Sheets('联通高等级站址_匹配告警')
+            last_row = sheet_filter.Cells(sheet_filter.Rows.Count, 1).End(win32.constants.xlUp).Row
+
+            sheet_filter.Rows.Hidden = False  # 先显示所有
+
+            for row in range(2, last_row + 1):
+                has_data = False
+                for col in range(6, 15):  # F=6 到 N=14
+                    cell_text = sheet_filter.Cells(row, col).Text
+                    if cell_text and '#N/A' not in cell_text and cell_text.strip() != '':
+                        has_data = True
+                        break
+                sheet_filter.Rows(row).Hidden = not has_data
+
             workbook_main.SaveAs(self.output_name2)
             workbook_main.Close()
             xl.Quit()
@@ -729,6 +744,7 @@ if __name__ == '__main__':
     while True:
         schedule.run_pending()
         time.sleep(60)
+
 
 
 

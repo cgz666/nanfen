@@ -185,7 +185,7 @@ class AlarmHistoryHbase():
         for key in ['1']:
             self.data[key]['queryForm:queryalarmName'] = second_alarm
         try:
-            down_file_single(self.URL, self.data, path, append=True)  # 假设支持 append 参数
+            down_file_single(self.URL, self.data, path)
             print(f"下载成功: {second_alarm}")
         except Exception as e:
             print(f"下载失败 {second_alarm}: {e}")
@@ -205,7 +205,7 @@ class AlarmDownloader():
             '交流输入停电告警',
             '一级低压脱离告警',
             '温度过高',
-            '温度超高',  # 这个会追加到温度过高文件
+            '温度超高',
             '电池供电告警',
             '交流输入缺相告警',
             '总电压过低告警',
@@ -221,22 +221,22 @@ class AlarmDownloader():
 
             # 温度超高追加到温度过高文件
             if alarm_name == '温度超高':
-                target_path = settings.resolve_path("spider/down/alarm_now/温度过高.xls")
-                temp_path = settings.resolve_path("spider/down/alarm_now/temp_温度超高.xls")
+                target_path = settings.resolve_path("spider/down/alarm_now/温度过高.xlsx")
+                temp_path = settings.resolve_path("spider/down/alarm_now/temp_温度超高.xlsx")
                 down_file_single(self.URL, self.data, temp_path)
                 self._merge_excel(target_path, temp_path)
-                if os.path.exists(temp_path):
-                    os.remove(temp_path)
             else:
-                output_path = settings.resolve_path(f"spider/down/alarm_now/{alarm_name}.xls")
+                output_path = settings.resolve_path(f"spider/down/alarm_now/{alarm_name}.xlsx")
                 down_file_single(self.URL, self.data, output_path)
                 print(f"下载完成: {alarm_name} -> {output_path}")
 
     def _merge_excel(self, target_path, source_path):
         """将source_path的数据追加到target_path，保持长数字串为文本格式"""
         try:
-            # 读取源文件（温度超高），所有列都作为字符串读取，防止科学计数法
-            df_source = pd.read_excel(source_path, dtype=str)
+            try:
+                df_source = pd.read_excel(source_path, dtype=str)
+            except:
+                return
 
             if os.path.exists(target_path):
                 # 目标文件存在，读取后追加（同样作为字符串）
@@ -744,7 +744,5 @@ if __name__ == '__main__':
     while True:
         schedule.run_pending()
         time.sleep(60)
-
-
 
 

@@ -92,7 +92,6 @@ def down_file_single(url, data, path, conten_len_error=1000):
         for key, into_data in data.items():
             into_data['javax.faces.ViewState'] = javax
             res = requests_post_safe(url, headers=headers, data=into_data, cookies=cookies)
-
             if 'FINAL' in key:
                 # 内容长度检查
                 if len(res.content) < conten_len_error:
@@ -180,15 +179,15 @@ class AlarmHistoryHbase():
             print(f"下载失败 {first_alarm}: {e}")
             return
 
-        # 下载第二个告警（追加到同一文件）
-        second_alarm = alarm_names[1]
-        for key in ['1']:
-            self.data[key]['queryForm:queryalarmName'] = second_alarm
-        try:
-            down_file_single(self.URL, self.data, path)
-            print(f"下载成功: {second_alarm}")
-        except Exception as e:
-            print(f"下载失败 {second_alarm}: {e}")
+        # # 下载第二个告警（追加到同一文件）
+        # second_alarm = alarm_names[1]
+        # for key in ['1']:
+        #     self.data[key]['queryForm:queryalarmName'] = second_alarm
+        # try:
+        #     down_file_single(self.URL, self.data, path)
+        #     print(f"下载成功: {second_alarm}")
+        # except Exception as e:
+        #     print(f"下载失败 {second_alarm}: {e}")
 
     def main(self):
         self.down()
@@ -744,5 +743,3 @@ if __name__ == '__main__':
     while True:
         schedule.run_pending()
         time.sleep(60)
-
-
